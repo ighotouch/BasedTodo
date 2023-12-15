@@ -5,31 +5,15 @@ import { Authorize } from '@based/functions'
 // a bollean allowing or blocking the request.
 const authorize: Authorize = async (based, ctx, _name, payload) => {
   const authState = ctx.session?.authState
-  const unsubscribe = await based // not sure this is the best way. I would implement a session management
+  const user = await based // not sure this is the best way. I would implement a session management
     .query('db', {
-      // $id: authState?.userId,
-      users: {
-        id: true,
-        $list: {
-          $find: {
-            $traverse: 'descendants',
-            $filter: [
-              {
-                $field: 'name',
-                $operator: '=',
-                $value: authState?.userId,
-              },
-            ],
-          },
-        },
-      },
+      $id: authState?.userId,
+      name: true,
     })
     .get()
-  if (unsubscribe?.users?.[0]) {
+  if (user?.name) {
     return true
   }
   return false
 }
-
-console.log()
 export default authorize
