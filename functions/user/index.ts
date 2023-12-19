@@ -3,7 +3,6 @@ import { BasedQueryFunction } from '@based/functions'
 export type UserItem = {
   id: string
   name: string
-  status: 'LOGGEDIN' | 'LOGGEDOUT'
 }
 
 const User: BasedQueryFunction<{ name: string }, UserItem[]> = async (

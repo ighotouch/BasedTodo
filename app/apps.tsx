@@ -1,7 +1,7 @@
-import React, { useEffect, useState, useCallback } from 'react'
+import React, { useState, useCallback } from 'react'
 import { render } from 'react-dom'
 import based from '@based/client'
-import { Provider, useLoading, useQuery, hooksLoading } from '@based/react'
+import { Provider, useWindow } from '@based/react'
 import basedConfig from '../based.json'
 import { VirtualList } from './components/VirtualList/virtualList'
 import TodoItem from './components/TodoItem/todoItem'
@@ -23,32 +23,43 @@ import InputButton from './components/AddTodo/addTodo'
 // but i used JEST) i only did little testing because its out of scope.
 // I did not test everything i only test what i need to show.
 
-
 export const client = based(basedConfig)
 
 const App = () => {
   const [limit] = useState(20)
-  const [offset, setOffset] = useState(0)
-  const [loading, setLoading] = useState(false)
+
   const [addingTodo, setAddingTodo] = useState(false) // manage the add todo state
-  const [cachedTodos, setCachedTodos] = useState<any>([]) // improve experience
   const [loginCode, setLoginCode] = useState<string>()
-  const loadingCtx = useLoading()
-  console.log(loadingCtx, hooksLoading)
+  const [pages, setPages] = useState([1, 2])
 
+  const { items, loading } = useWindow(
+    'todo',
+    ({ offset, limit }) => {
+      return {
+        offset,
+        limit,
+      }
+    },
+    {
+      path: [], // where are the items in the response?
+      pages, // array of page numbers - starts at 1
+      size: limit, // amount of items per page
+      persistent: true,
+    }
+  )
 
-  // The authentication logic is currently simplistic. 
-  // In a production environment, you'd likely want to implement more robust authentication mechanisms, 
+  // The authentication logic is currently simplistic.
+  // In a production environment, you'd likely want to implement more robust authentication mechanisms,
   // possibly using tokens, securely storing user credentials, and handling login failures more gracefully.
   const handleLogin = async (name: string) => {
-    if (name) { // => set token on
+    if (name) {
+      // => set token on
       // in real world should include proper auth like password
       const result = await client.query('user', { name }).get()
       const user = result[0]
       if (user?.id) {
         setLoginCode(name)
         await client.setAuthState({ userId: 'igho' }) // this should be some GWT TOKEN
-        return
       }
     } else {
       alert('Invalid login code. Please try again.')
@@ -68,36 +79,17 @@ const App = () => {
     return uniqueId.slice(0, 8)
   }
 
-  // 1
-  const fetchMoreItems = useCallback(async () => {
-    try {
-      // Using useQuery was a problem, i expected to find a Better api just like Graphql to refetch
-      // but resulted to this solution
-      const result = await client.query('todo', { offset: offset, limit }).get()
-      const newItems = result || []
-      // implementation of a vitual list may vary but my assumption here is:
-      // if you can scroll up to a million you probably should have time and memory for that. (To be discussed)
-      setCachedTodos((prevItems) => [...prevItems, ...newItems])
-      setOffset((prevOffset) => prevOffset + limit)
-    } catch (error) {
-      // am not sure how the api handles error this is just incase anything funny happens.
-      console.error('Error fetching more items:', error)
-    } finally {
-      setLoading(false)
-    }
-  }, [offset, limit])
-
   const handleScroll = useCallback(
-    async (index) => {
-      console.log('handleScroll', index, offset, loading) // deliberatly left this log
-      if (!loading && index >= offset - 5) { // loading from the top is disabled
-        setLoading(true)
-        await fetchMoreItems()
+    async (_, stopIndex) => {
+      const newPage = Math.ceil(stopIndex / limit)
+
+      if (newPage !== pages[pages.length - 1] && newPage !== pages[1]) {
+        // Check if the new page is not the last or second page in the current window
+        setPages([newPage, newPage + 1])
       }
     },
-    [loading, offset, limit, fetchMoreItems]
+    [limit, pages]
   )
-
   const handleClick = async (text) => {
     const myUniqueId = generateUniqueId()
     setAddingTodo(true)
@@ -105,9 +97,7 @@ const App = () => {
       $id: `to${myUniqueId}`,
       title: { en: text },
     })
-    const result = await client.query('todo', { offset: 0, limit: 1 }).get()
-    const newItems = result || []
-    setCachedTodos((prevItems) => [...newItems, ...prevItems]) // ASK better way based on API
+
     setAddingTodo(false)
   }
 
@@ -119,7 +109,8 @@ const App = () => {
     })
   }
 
-  const renderListItem = useCallback( // not required to render this all the time thats why its abstracted and memorized
+  const renderListItem = useCallback(
+    // not required to render this all the time thats why its abstracted and memorized
     (todo: any) => (
       <TodoItem
         key={todo.id}
@@ -131,13 +122,6 @@ const App = () => {
     ),
     [toggleComplete]
   )
-
-  // Trigger the initial fetch only when the component mounts
-  useEffect(() => {
-    if (offset === 0 && loginCode) { // there might be a bug here
-      fetchMoreItems()
-    }
-  }, [fetchMoreItems, offset, loginCode])
 
   return (
     <div
@@ -159,6 +143,7 @@ const App = () => {
         }}
         src="https://user-images.githubusercontent.com/683825/203369546-5b50d2f8-71cc-4d13-a7a1-f9a67f2072f6.svg"
       />
+
       {/* {Authentication switch, i will do this better in prod} */}
       {!loginCode ? (
         <InputButton
@@ -190,8 +175,8 @@ const App = () => {
           <InputButton onSubmit={handleClick} loading={addingTodo} />
           <VirtualList
             renderItem={renderListItem}
-            items={cachedTodos}
-            itemHeight={50}
+            items={items}
+            limit={limit}
             emptyMessage="Nothing todo today feel free to chill on Netflix"
             onScroll={handleScroll}
           />

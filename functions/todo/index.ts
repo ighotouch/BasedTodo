@@ -1,6 +1,6 @@
 import { BasedQueryFunction } from '@based/functions'
 
-type TodoItem = {
+export type TodoItem = {
   id: string
   title: string
 }

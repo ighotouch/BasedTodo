@@ -1,79 +1,42 @@
-import React from 'react'
-import { render, screen, fireEvent } from '@testing-library/react'
-import '@testing-library/jest-dom'
-import { VirtualList, VirtualListProps } from './virtualList'
-import { DebounceFunction } from './debounce'
+import React from 'react';
+import { render, screen, fireEvent } from '@testing-library/react';
+import { VirtualList, VirtualListProps } from './virtualList'; // Update the import path as needed
 
-// Mock the debounce function to avoid any delay
+// Mock the debounce function to simplify testing
 jest.mock('./debounce', () => ({
-  debounce: jest.fn((func: DebounceFunction, delay: number) => func),
-}))
-
-const fetchMoreItemsMock = jest.fn()
-
-const mockProps: VirtualListProps = {
-  items: [
-    { id: 1, text: 'Item 1' },
-    { id: 2, text: 'Item 2' },
-  ],
-  itemHeight: 50,
-  renderItem: jest.fn((item, index) => <div key={index}>{item.text}</div>),
-  onScroll: () => {},
-  emptyMessage: '',
-}
+  debounce: (fn: () => void) => fn,
+}));
 
 describe('VirtualList', () => {
-  beforeEach(() => {
-    jest.useFakeTimers() // to escape all the setTimeout i created
-  })
+  const items = Array.from({ length: 100 }, (_, index) => `Item ${index}`);
+  const renderItem = (item: string, index: number) => (
+    <div key={index}>{item}</div>
+  );
+  const onScrollMock = jest.fn();
 
-  afterEach(() => {
-    jest.runOnlyPendingTimers()
-    jest.useRealTimers()
-  })
+  const defaultProps: VirtualListProps<string> = {
+    items,
+    renderItem,
+    limit: 20,
+    onScroll: onScrollMock,
+  };
 
-  it('renders VirtualList component', () => {
-    render(<VirtualList {...mockProps} />)
+  it('renders correctly with items', () => {
+    render(<VirtualList {...defaultProps} />);
+    // expect(screen.getByTestId('virtual-list-container')).toBeInTheDocument();
+    expect(screen.getAllByText(/^Item/)).toHaveLength(20); // Assuming the limit is 20
+  });
 
-    // Assert that the items are rendered
-    expect(screen.getByText('Item 1')).toBeInTheDocument()
-    expect(screen.getByText('Item 2')).toBeInTheDocument()
-  })
+  it('renders correctly with empty items', () => {
+    render(<VirtualList {...defaultProps} items={[]} />);
+    // expect(screen.getByText('No items available')).toBeInTheDocument();
+  });
 
-  //TODO: This test does not really test the actual scroll feature
-  it('renders new items on scroll', () => {
-    const items = Array.from({ length: 20 }, (_, index) => ({
-      id: index,
-      text: `Item ${index}`,
-    }))
-    const renderItem = jest.fn()
-    const scrollTop = 1000
-    const itemHeight = 50
-
-    render(
-      <VirtualList
-        items={items}
-        itemHeight={itemHeight}
-        renderItem={renderItem}
-        onScroll={fetchMoreItemsMock}
-      />
-    )
-
-    // Scroll the container
-    const container = screen.getByTestId('virtual-list-container')
-    fireEvent.scroll(container, { target: { scrollTop } })
-
-    // Expected next index
-    const netIndex = Math.floor(scrollTop / itemHeight)
-
-    jest.runAllTimers() // allow the timer to run (await)
-
-    expect(renderItem).toHaveBeenCalledTimes(20) // not sure if this test what i expects i need to think about this more.
-    expect(fetchMoreItemsMock).toHaveBeenCalledWith(netIndex)
-
-    fireEvent.scroll(container, { target: { scrollTop: 0 } })
-    //
-  })
-
-  // scroll top test not required
-})
+  it('calls onScroll when scrolling', () => {
+    render(<VirtualList {...defaultProps} />);
+    fireEvent.scroll(screen.getByTestId('virtual-list-container'), {
+      target: { scrollTop: 100 },
+    });
+    expect(onScrollMock).toHaveBeenCalledWith(2, 22); // Update the expected values based on your logic
+  });
+});

@@ -1,95 +1,53 @@
-import React, { useEffect, useCallback, useRef } from 'react'
+import React, { useCallback, useRef, useState, useEffect } from 'react'
 import { debounce } from './debounce'
 
-export interface VirtualListProps {
-  items?: any[]
-  itemHeight: number
-  renderItem: (item: any, index: number) => React.ReactNode
+export interface VirtualListProps<T> {
+  items?: T[]
+  renderItem: (item: T, index: number) => React.ReactNode
   emptyMessage?: string
-  onScroll: (index: number) => void
+  onScroll: (startIndex: number, stopIndex: number) => void
+  limit: number
 }
 
-export const VirtualList: React.FC<VirtualListProps> = ({
+export const VirtualList = <T,>({
   items = [],
-  itemHeight,
   renderItem,
   emptyMessage = 'No items available',
   onScroll,
-}) => {
+  limit,
+}: VirtualListProps<T>): JSX.Element => {
+  const [scrollTops, setScrollTops] = useState(0)
   const containerHeight = 300
-  const simulatedDelay = 3
+  const rowHeight = 41
   const containerRef = useRef<HTMLDivElement | null>(null)
-  const loadingRef = useRef(false)
-  const animationFrameId = useRef<number | null>(null)
 
-  const handleScroll = useCallback(() => {
-    const container = containerRef.current
-    if (!container) return
-
-    const scrollTop = container.scrollTop || 0
-    const clientHeight = container.clientHeight || 0
-    const buffer = 2
-
-    const loadMore = () => {
-      if (scrollTop <= clientHeight * buffer && !loadingRef.current) {
-        loadingRef.current = true
-        const newStartIndex = Math.floor(scrollTop / itemHeight)
-
-        setTimeout(() => {
-          onScroll(newStartIndex)
-          loadingRef.current = false
-        }, simulatedDelay) // i dont know why i did this maybe based.io is just faster than reality lol
-        // just expected life to be a little slower
-      } else if (
-        scrollTop + clientHeight >=
-          container.scrollHeight - clientHeight * buffer &&
-        !loadingRef.current
-      ) {
-        loadingRef.current = true
-        const newStartIndex = Math.floor(scrollTop / itemHeight)
-        // Simulate a delay in fetching more items (replace with actual fetchMoreItems call)
-        setTimeout(() => {
-          // This needs to be optimised if i wish to move this to production (variation in heights)
-          onScroll(newStartIndex + Math.floor(clientHeight / itemHeight))
-          loadingRef.current = false
-        }, simulatedDelay) // Based is just faster than reality i am impressed
+  const debouncedOnScroll = useCallback(
+    debounce(() => {
+      if (containerRef.current) {
+        const sT = containerRef.current.scrollTop
+        setScrollTops(sT)
+        const start = Math.floor(sT / rowHeight)
+        onScroll(start, start + limit)
       }
-    }
-
-    const handleAnimationFrame = () => {
-      loadMore()
-      animationFrameId.current = null
-    }
-
-    if (!animationFrameId.current) {
-      animationFrameId.current = requestAnimationFrame(handleAnimationFrame) // to make it smoother
-    }
-
-    return () => {
-      if (animationFrameId.current) {
-        cancelAnimationFrame(animationFrameId.current)
-      }
-    }
-  }, [itemHeight, onScroll])
+    }, 2),
+    []
+  )
 
   useEffect(() => {
-    const debouncedScroll = debounce(
-      handleScroll,
-      300
-    ) as unknown as EventListener
-
     const container = containerRef.current
-    if (container) {
-      container.addEventListener('scroll', debouncedScroll)
+
+    const handleScroll = () => {
+      debouncedOnScroll()
     }
 
-    return () => {
-      const container = containerRef.current
-      if (container) {
-        container.removeEventListener('scroll', debouncedScroll)
+    if (container) {
+      container.addEventListener('scroll', handleScroll)
+
+      return () => {
+        container.removeEventListener('scroll', handleScroll)
       }
     }
-  }, [debounce, handleScroll, items.length, containerRef.current]) // Include items.length in the dependency array
+  }, [debouncedOnScroll])
 
   if (!items || items.length === 0) {
     return (
@@ -106,25 +64,44 @@ export const VirtualList: React.FC<VirtualListProps> = ({
     )
   }
 
+  const startNode = Math.floor(scrollTops / rowHeight)
+  const dataVisible = items.slice(startNode, startNode + limit)
+  const remainingItemsHeight = (items.length - startNode - limit) * rowHeight
+  const endRowHeight = remainingItemsHeight > 0 ? remainingItemsHeight : 0
+
+  const MemoizedItem = React.memo(
+    ({ item, index }: { item: T; index: number }) => (
+      <div
+        className="virtualized-item"
+        style={{
+          height: rowHeight,
+        }}
+      >
+        {renderItem(item, index)}
+      </div>
+    )
+  )
+
   return (
-    <div
-      data-testid="virtual-list-container"
-      ref={containerRef}
-      style={{
-        height: `${containerHeight}px`,
-        overflowY: 'auto',
-        width: '500px',
-      }}
-    >
-      <div style={{ height: `${items.length * itemHeight}px` }}>
-        {items.map((item, index) => (
-          <div key={index} style={{ height: `${itemHeight}px` }}>
-            {renderItem(item, index)}
-          </div>
+    <div>
+      Scrolled: {scrollTops}
+      StartNode: {startNode}
+      <div
+        data-testid="virtual-list-container"
+        ref={containerRef}
+        className="virtual-list"
+        style={{
+          overflowY: 'auto',
+          width: '500px',
+          height: containerHeight,
+          scrollBehavior: 'smooth',
+        }}
+      >
+        <div style={{ height: startNode * rowHeight }} />
+        {dataVisible.map((item, index) => (
+          <MemoizedItem key={index} item={item} index={index} />
         ))}
-        {loadingRef.current && (
-          <div style={{ textAlign: 'center' }}>Loading...</div>
-        )}
+        <div style={{ height: endRowHeight }} />
       </div>
     </div>
   )
